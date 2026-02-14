@@ -1,0 +1,841 @@
+{% extends "base.html" %}
+
+{% block title %}Ввод результатов - {{ tournament.name }}{% endblock %}
+
+{% block content %}
+<div class="jury-panel-header">
+    <h1><i class="fas fa-gavel"></i> {{ tournament.name }}</h1>
+    <p class="tournament-location"><i class="fas fa-map-marker-alt"></i> {{ tournament.location }}</p>
+    <div class="jury-actions">
+        <a href="{{ url_for('tournament_leaderboard', tournament_id=tournament.id) }}"
+           class="btn btn-primary">
+            <i class="fas fa-chart-line"></i> Смотреть табло
+        </a>
+        <a href="{{ url_for('jury_dashboard') }}" class="btn btn-outline">
+            <i class="fas fa-arrow-left"></i> К списку турниров
+        </a>
+    </div>
+</div>
+
+<div class="jury-panel">
+    <!-- Форма ввода результатов -->
+    <div class="jury-form-section">
+        <h2><i class="fas fa-edit"></i> Ввод результата</h2>
+
+        <form id="resultForm" class="jury-form">
+            <input type="hidden" id="tournament_id" value="{{ tournament.id }}">
+
+            <div class="form-group">
+                <label for="teamName"><i class="fas fa-users"></i> Команда:</label>
+                <input type="text" id="teamName" placeholder="Введите название команды" required
+                       list="existingTeams" onchange="updateTeamScore()">
+                <datalist id="existingTeams"></datalist>
+            </div>
+
+            <div id="teamCurrentScore" class="team-score-info"></div>
+
+            <div class="form-group">
+                <label for="taskNumber"><i class="fas fa-tasks"></i> Номер задачи:</label>
+                <input type="number" id="taskNumber" min="1" max="20" value="1" required>
+            </div>
+
+            <div class="form-group">
+                <label for="betAmount"><i class="fas fa-coins"></i> Ставка команды:</label>
+                <input type="number" id="betAmount" min="1" placeholder="Введите ставку" required oninput="validateBet()">
+                <small class="form-text" id="betHelp"></small>
+            </div>
+
+            <div class="form-group">
+                <label>Вердикт жюри:</label>
+                <div class="verdict-buttons">
+                    <button type="button" class="verdict-btn correct-btn" onclick="setVerdict(true)">
+                        <i class="fas fa-check"></i> Правильно (+ставка)
+                    </button>
+                    <button type="button" class="verdict-btn incorrect-btn" onclick="setVerdict(false)">
+                        <i class="fas fa-times"></i> Неправильно (-ставка)
+                    </button>
+                </div>
+                <input type="hidden" id="verdict" value="">
+            </div>
+
+            <div class="points-preview" id="pointsPreview"></div>
+            <div id="betError" class="error-message"></div>
+
+            <button type="submit" class="btn btn-primary btn-block" id="submitBtn" disabled>
+                <i class="fas fa-paper-plane"></i> Отправить результат
+            </button>
+        </form>
+
+        <div id="resultMessage" class="message"></div>
+    </div>
+
+    <!-- Быстрый ввод и информация -->
+    <div class="quick-input-section">
+        <h3><i class="fas fa-bolt"></i> Быстрый ввод</h3>
+        <div class="quick-teams" id="quickTeams"></div>
+
+        <h3 style="margin-top: 20px;"><i class="fas fa-chart-line"></i> Текущие счета</h3>
+        <div id="teamScores" class="team-scores-list"></div>
+    </div>
+
+    <!-- Последние результаты -->
+    <div class="recent-results-section">
+        <h3><i class="fas fa-history"></i> Последние результаты</h3>
+        <div id="recentResults" class="recent-results"></div>
+    </div>
+</div>
+
+<script>
+let currentVerdict = null;
+let teamScores = {};
+
+// Загрузка данных
+async function loadTournamentData() {
+    const response = await fetch(`/api/tournament_data/{{ tournament.id }}`);
+    const data = await response.json();
+
+    teamScores = data.team_scores || {};
+
+    const teams = Object.keys(teamScores);
+
+    // Обновляем datalist
+    const datalist = document.getElementById('existingTeams');
+    datalist.innerHTML = teams.map(team => `<option value="${team}">`).join('');
+
+    // Обновляем быстрый ввод
+    const quickTeamsDiv = document.getElementById('quickTeams');
+    quickTeamsDiv.innerHTML = teams.map(team => `
+        <button class="quick-team-btn" onclick="setTeam('${team}')">
+            <i class="fas fa-users"></i> ${team} (${teamScores[team]} баллов)
+        </button>
+    `).join('');
+
+    // Обновляем список счетов
+    const teamScoresDiv = document.getElementById('teamScores');
+    const sortedTeams = Object.entries(teamScores).sort((a, b) => b[1] - a[1]);
+    teamScoresDiv.innerHTML = sortedTeams.map(([team, score]) => `
+        <div class="team-score-item">
+            <span class="team-name">${team}</span>
+            <span class="team-score ${score >= 0 ? 'positive' : 'negative'}">${score} баллов</span>
+        </div>
+    `).join('');
+
+    // Обновляем последние результаты
+    displayRecentResults(data.submissions.slice(-5).reverse());
+
+    if (document.getElementById('teamName').value) {
+        updateTeamScore();
+    }
+}
+
+function setTeam(team) {
+    document.getElementById('teamName').value = team;
+    updateTeamScore();
+    validateBet();
+}
+
+async function updateTeamScore() {
+    const teamName = document.getElementById('teamName').value;
+    const scoreDiv = document.getElementById('teamCurrentScore');
+
+    if (teamName && teamScores[teamName] !== undefined) {
+        const score = teamScores[teamName];
+        scoreDiv.innerHTML = `
+            <div class="team-current-score ${score >= 0 ? 'positive' : 'negative'}">
+                Текущий счет команды: <strong>${score} баллов</strong>
+            </div>
+        `;
+    } else if (teamName) {
+        scoreDiv.innerHTML = `
+            <div class="team-current-score">
+                Новая команда (счет: 0 баллов)
+            </div>
+        `;
+    } else {
+        scoreDiv.innerHTML = '';
+    }
+}
+
+function validateBet() {
+    const teamName = document.getElementById('teamName').value;
+    const bet = parseInt(document.getElementById('betAmount').value) || 0;
+    const verdict = currentVerdict;
+    const errorDiv = document.getElementById('betError');
+    const betHelp = document.getElementById('betHelp');
+    const submitBtn = document.getElementById('submitBtn');
+
+    errorDiv.innerHTML = '';
+    betHelp.innerHTML = '';
+
+    if (!teamName || !bet || verdict === null) {
+        submitBtn.disabled = true;
+        return;
+    }
+
+    const currentScore = teamScores[teamName] || 0;
+
+    // Проверка для неправильного ответа
+    if (verdict === false) {
+        if (bet > Math.abs(currentScore)) {
+            errorDiv.innerHTML = `
+                <i class="fas fa-exclamation-triangle"></i>
+                Ошибка: У команды недостаточно баллов!
+                Текущий счет: ${currentScore}, требуется: ${bet}
+            `;
+            submitBtn.disabled = true;
+            return;
+        }
+        betHelp.innerHTML = `После списания у команды будет: ${currentScore - bet} баллов`;
+    } else if (verdict === true) {
+        betHelp.innerHTML = `После начисления у команды будет: ${currentScore + bet} баллов`;
+    }
+
+    updatePointsPreview();
+    submitBtn.disabled = false;
+}
+
+function setVerdict(isCorrect) {
+    currentVerdict = isCorrect;
+    document.getElementById('verdict').value = isCorrect;
+
+    document.querySelectorAll('.verdict-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    if (isCorrect) {
+        document.querySelector('.correct-btn').classList.add('active');
+    } else {
+        document.querySelector('.incorrect-btn').classList.add('active');
+    }
+
+    validateBet();
+}
+
+function updatePointsPreview() {
+    const bet = parseInt(document.getElementById('betAmount').value) || 0;
+    const preview = document.getElementById('pointsPreview');
+    const teamName = document.getElementById('teamName').value;
+    const currentScore = teamScores[teamName] || 0;
+
+    if (currentVerdict !== null && bet > 0 && teamName) {
+        const points = currentVerdict ? bet : -bet;
+        const newScore = currentScore + points;
+        preview.innerHTML = `
+            <div class="points-preview-content ${points > 0 ? 'positive' : 'negative'}">
+                <div>Будет начислено: <strong>${points > 0 ? '+' : ''}${points} баллов</strong></div>
+                <div>Новый счет: <strong>${newScore} баллов</strong></div>
+            </div>
+        `;
+    } else {
+        preview.innerHTML = '';
+    }
+}
+
+function displayRecentResults(submissions) {
+    const container = document.getElementById('recentResults');
+
+    if (submissions.length === 0) {
+        container.innerHTML = '<p class="no-data">Пока нет результатов</p>';
+        return;
+    }
+
+    container.innerHTML = submissions.map(sub => {
+        const points = sub.points;
+        const pointsClass = points > 0 ? 'positive' : (points < 0 ? 'negative' : '');
+        return `
+        <div class="recent-result">
+            <div class="recent-result-header">
+                <span class="team">${sub.team_name}</span>
+                <span class="time">${new Date(sub.submitted_at).toLocaleTimeString()}</span>
+            </div>
+            <div class="recent-result-details">
+                Задача ${sub.task_number} • Ставка: ${sub.bet}<br>
+                <strong class="${pointsClass}">${points > 0 ? '+' : ''}${points} баллов</strong>
+            </div>
+        </div>
+    `}).join('');
+}
+
+// Обработчики событий
+document.getElementById('teamName').addEventListener('input', function() {
+    updateTeamScore();
+    validateBet();
+});
+
+document.getElementById('betAmount').addEventListener('input', validateBet);
+document.getElementById('taskNumber').addEventListener('input', validateBet);
+
+document.getElementById('resultForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = {
+        tournament_id: parseInt(document.getElementById('tournament_id').value),
+        team_name: document.getElementById('teamName').value,
+        task_number: parseInt(document.getElementById('taskNumber').value),
+        bet: parseInt(document.getElementById('betAmount').value),
+        is_correct: currentVerdict
+    };
+
+    const messageDiv = document.getElementById('resultMessage');
+
+    try {
+        const response = await fetch('/api/submit_result', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            const points = result.submission.points;
+            const sign = points > 0 ? '+' : '';
+
+            messageDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i> Результат сохранен!<br>
+                    Команда: ${result.submission.team_name}<br>
+                    Задача: ${result.submission.task_number}<br>
+                    <strong>${sign}${points} баллов</strong>
+                </div>
+            `;
+
+            // Очистка формы
+            document.getElementById('teamName').value = '';
+            document.getElementById('taskNumber').value = 1;
+            document.getElementById('betAmount').value = '';
+            document.getElementById('verdict').value = '';
+            document.getElementById('pointsPreview').innerHTML = '';
+            document.getElementById('teamCurrentScore').innerHTML = '';
+            document.getElementById('betError').innerHTML = '';
+            document.getElementById('betHelp').innerHTML = '';
+            currentVerdict = null;
+            document.querySelectorAll('.verdict-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById('submitBtn').disabled = true;
+
+            // Обновляем данные
+            loadTournamentData();
+        } else {
+            messageDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i> Ошибка: ${result.error}
+                </div>
+            `;
+        }
+    } catch (error) {
+        messageDiv.innerHTML = `
+            <div class="alert alert-error">
+                <i class="fas fa-exclamation-circle"></i> Ошибка соединения
+            </div>
+        `;
+    }
+
+    setTimeout(() => {
+        messageDiv.innerHTML = '';
+    }, 5000);
+});
+
+// Загружаем данные при старте
+document.addEventListener('DOMContentLoaded', loadTournamentData);
+setInterval(loadTournamentData, 10000); // Обновление каждые 10 секунд
+</script>
+
+<style>{% extends "base.html" %}
+
+{% block title %}Ввод результатов - {{ tournament.name }}{% endblock %}
+
+{% block content %}
+<div class="jury-panel-header">
+    <h1><i class="fas fa-gavel"></i> {{ tournament.name }}</h1>
+    <p class="tournament-location"><i class="fas fa-map-marker-alt"></i> {{ tournament.location }}</p>
+    <div class="jury-actions">
+        <a href="{{ url_for('tournament_leaderboard', tournament_id=tournament.id) }}"
+           class="btn btn-primary">
+            <i class="fas fa-chart-line"></i> Смотреть табло
+        </a>
+        <a href="{{ url_for('jury_dashboard') }}" class="btn btn-outline">
+            <i class="fas fa-arrow-left"></i> К списку турниров
+        </a>
+    </div>
+</div>
+
+<div class="jury-panel">
+    <!-- Форма ввода результатов -->
+    <div class="jury-form-section">
+        <h2><i class="fas fa-edit"></i> Ввод результата</h2>
+
+        <form id="resultForm" class="jury-form">
+            <input type="hidden" id="tournament_id" value="{{ tournament.id }}">
+
+            <div class="form-group">
+                <label for="teamName"><i class="fas fa-users"></i> Команда:</label>
+                <input type="text" id="teamName" placeholder="Введите название команды" required
+                       list="existingTeams" onchange="updateTeamScore()">
+                <datalist id="existingTeams"></datalist>
+            </div>
+
+            <div id="teamCurrentScore" class="team-score-info"></div>
+
+            <div class="form-group">
+                <label for="taskNumber"><i class="fas fa-tasks"></i> Номер задачи:</label>
+                <input type="number" id="taskNumber" min="1" max="20" value="1" required>
+            </div>
+
+            <div class="form-group">
+                <label for="betAmount"><i class="fas fa-coins"></i> Ставка команды:</label>
+                <input type="number" id="betAmount" min="1" placeholder="Введите ставку" required oninput="validateBet()">
+                <small class="form-text" id="betHelp"></small>
+            </div>
+
+            <div class="form-group">
+                <label>Вердикт жюри:</label>
+                <div class="verdict-buttons">
+                    <button type="button" class="verdict-btn correct-btn" onclick="setVerdict(true)">
+                        <i class="fas fa-check"></i> Правильно (+ставка)
+                    </button>
+                    <button type="button" class="verdict-btn incorrect-btn" onclick="setVerdict(false)">
+                        <i class="fas fa-times"></i> Неправильно (-ставка)
+                    </button>
+                </div>
+                <input type="hidden" id="verdict" value="">
+            </div>
+
+            <div class="points-preview" id="pointsPreview"></div>
+            <div id="betError" class="error-message"></div>
+
+            <button type="submit" class="btn btn-primary btn-block" id="submitBtn" disabled>
+                <i class="fas fa-paper-plane"></i> Отправить результат
+            </button>
+        </form>
+
+        <div id="resultMessage" class="message"></div>
+    </div>
+
+    <!-- Быстрый ввод и информация -->
+    <div class="quick-input-section">
+        <h3><i class="fas fa-bolt"></i> Быстрый ввод</h3>
+        <div class="quick-teams" id="quickTeams"></div>
+
+        <h3 style="margin-top: 20px;"><i class="fas fa-chart-line"></i> Текущие счета</h3>
+        <div id="teamScores" class="team-scores-list"></div>
+    </div>
+
+    <!-- Последние результаты -->
+    <div class="recent-results-section">
+        <h3><i class="fas fa-history"></i> Последние результаты</h3>
+        <div id="recentResults" class="recent-results"></div>
+    </div>
+</div>
+
+<script>
+let currentVerdict = null;
+let teamScores = {};
+
+// Загрузка данных
+async function loadTournamentData() {
+    const response = await fetch(`/api/tournament_data/{{ tournament.id }}`);
+    const data = await response.json();
+
+    teamScores = data.team_scores || {};
+
+    const teams = Object.keys(teamScores);
+
+    // Обновляем datalist
+    const datalist = document.getElementById('existingTeams');
+    datalist.innerHTML = teams.map(team => `<option value="${team}">`).join('');
+
+    // Обновляем быстрый ввод
+    const quickTeamsDiv = document.getElementById('quickTeams');
+    quickTeamsDiv.innerHTML = teams.map(team => `
+        <button class="quick-team-btn" onclick="setTeam('${team}')">
+            <i class="fas fa-users"></i> ${team} (${teamScores[team]} баллов)
+        </button>
+    `).join('');
+
+    // Обновляем список счетов
+    const teamScoresDiv = document.getElementById('teamScores');
+    const sortedTeams = Object.entries(teamScores).sort((a, b) => b[1] - a[1]);
+    teamScoresDiv.innerHTML = sortedTeams.map(([team, score]) => `
+        <div class="team-score-item">
+            <span class="team-name">${team}</span>
+            <span class="team-score ${score >= 0 ? 'positive' : 'negative'}">${score} баллов</span>
+        </div>
+    `).join('');
+
+    // Обновляем последние результаты
+    displayRecentResults(data.submissions.slice(-5).reverse());
+
+    if (document.getElementById('teamName').value) {
+        updateTeamScore();
+    }
+}
+
+function setTeam(team) {
+    document.getElementById('teamName').value = team;
+    updateTeamScore();
+    validateBet();
+}
+
+async function updateTeamScore() {
+    const teamName = document.getElementById('teamName').value;
+    const scoreDiv = document.getElementById('teamCurrentScore');
+
+    if (teamName && teamScores[teamName] !== undefined) {
+        const score = teamScores[teamName];
+        scoreDiv.innerHTML = `
+            <div class="team-current-score ${score >= 0 ? 'positive' : 'negative'}">
+                Текущий счет команды: <strong>${score} баллов</strong>
+            </div>
+        `;
+    } else if (teamName) {
+        scoreDiv.innerHTML = `
+            <div class="team-current-score">
+                Новая команда (счет: 0 баллов)
+            </div>
+        `;
+    } else {
+        scoreDiv.innerHTML = '';
+    }
+}
+
+function validateBet() {
+    const teamName = document.getElementById('teamName').value;
+    const bet = parseInt(document.getElementById('betAmount').value) || 0;
+    const verdict = currentVerdict;
+    const errorDiv = document.getElementById('betError');
+    const betHelp = document.getElementById('betHelp');
+    const submitBtn = document.getElementById('submitBtn');
+
+    errorDiv.innerHTML = '';
+    betHelp.innerHTML = '';
+
+    if (!teamName || !bet || verdict === null) {
+        submitBtn.disabled = true;
+        return;
+    }
+
+    const currentScore = teamScores[teamName] || 0;
+
+    // Проверка для неправильного ответа
+    if (verdict === false) {
+        if (bet > Math.abs(currentScore)) {
+            errorDiv.innerHTML = `
+                <i class="fas fa-exclamation-triangle"></i>
+                Ошибка: У команды недостаточно баллов!
+                Текущий счет: ${currentScore}, требуется: ${bet}
+            `;
+            submitBtn.disabled = true;
+            return;
+        }
+        betHelp.innerHTML = `После списания у команды будет: ${currentScore - bet} баллов`;
+    } else if (verdict === true) {
+        betHelp.innerHTML = `После начисления у команды будет: ${currentScore + bet} баллов`;
+    }
+
+    updatePointsPreview();
+    submitBtn.disabled = false;
+}
+
+function setVerdict(isCorrect) {
+    currentVerdict = isCorrect;
+    document.getElementById('verdict').value = isCorrect;
+
+    document.querySelectorAll('.verdict-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    if (isCorrect) {
+        document.querySelector('.correct-btn').classList.add('active');
+    } else {
+        document.querySelector('.incorrect-btn').classList.add('active');
+    }
+
+    validateBet();
+}
+
+function updatePointsPreview() {
+    const bet = parseInt(document.getElementById('betAmount').value) || 0;
+    const preview = document.getElementById('pointsPreview');
+    const teamName = document.getElementById('teamName').value;
+    const currentScore = teamScores[teamName] || 0;
+
+    if (currentVerdict !== null && bet > 0 && teamName) {
+        const points = currentVerdict ? bet : -bet;
+        const newScore = currentScore + points;
+        preview.innerHTML = `
+            <div class="points-preview-content ${points > 0 ? 'positive' : 'negative'}">
+                <div>Будет начислено: <strong>${points > 0 ? '+' : ''}${points} баллов</strong></div>
+                <div>Новый счет: <strong>${newScore} баллов</strong></div>
+            </div>
+        `;
+    } else {
+        preview.innerHTML = '';
+    }
+}
+
+function displayRecentResults(submissions) {
+    const container = document.getElementById('recentResults');
+
+    if (submissions.length === 0) {
+        container.innerHTML = '<p class="no-data">Пока нет результатов</p>';
+        return;
+    }
+
+    container.innerHTML = submissions.map(sub => {
+        const points = sub.points;
+        const pointsClass = points > 0 ? 'positive' : (points < 0 ? 'negative' : '');
+        return `
+        <div class="recent-result">
+            <div class="recent-result-header">
+                <span class="team">${sub.team_name}</span>
+                <span class="time">${new Date(sub.submitted_at).toLocaleTimeString()}</span>
+            </div>
+            <div class="recent-result-details">
+                Задача ${sub.task_number} • Ставка: ${sub.bet}<br>
+                <strong class="${pointsClass}">${points > 0 ? '+' : ''}${points} баллов</strong>
+            </div>
+        </div>
+    `}).join('');
+}
+
+// Обработчики событий
+document.getElementById('teamName').addEventListener('input', function() {
+    updateTeamScore();
+    validateBet();
+});
+
+document.getElementById('betAmount').addEventListener('input', validateBet);
+document.getElementById('taskNumber').addEventListener('input', validateBet);
+
+document.getElementById('resultForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = {
+        tournament_id: parseInt(document.getElementById('tournament_id').value),
+        team_name: document.getElementById('teamName').value,
+        task_number: parseInt(document.getElementById('taskNumber').value),
+        bet: parseInt(document.getElementById('betAmount').value),
+        is_correct: currentVerdict
+    };
+
+    const messageDiv = document.getElementById('resultMessage');
+
+    try {
+        const response = await fetch('/api/submit_result', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            const points = result.submission.points;
+            const sign = points > 0 ? '+' : '';
+
+            messageDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i> Результат сохранен!<br>
+                    Команда: ${result.submission.team_name}<br>
+                    Задача: ${result.submission.task_number}<br>
+                    <strong>${sign}${points} баллов</strong>
+                </div>
+            `;
+
+            // Очистка формы
+            document.getElementById('teamName').value = '';
+            document.getElementById('taskNumber').value = 1;
+            document.getElementById('betAmount').value = '';
+            document.getElementById('verdict').value = '';
+            document.getElementById('pointsPreview').innerHTML = '';
+            document.getElementById('teamCurrentScore').innerHTML = '';
+            document.getElementById('betError').innerHTML = '';
+            document.getElementById('betHelp').innerHTML = '';
+            currentVerdict = null;
+            document.querySelectorAll('.verdict-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById('submitBtn').disabled = true;
+
+            // Обновляем данные
+            loadTournamentData();
+        } else {
+            messageDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i> Ошибка: ${result.error}
+                </div>
+            `;
+        }
+    } catch (error) {
+        messageDiv.innerHTML = `
+            <div class="alert alert-error">
+                <i class="fas fa-exclamation-circle"></i> Ошибка соединения
+            </div>
+        `;
+    }
+
+    setTimeout(() => {
+        messageDiv.innerHTML = '';
+    }, 5000);
+});
+
+// Загружаем данные при старте
+document.addEventListener('DOMContentLoaded', loadTournamentData);
+setInterval(loadTournamentData, 10000); // Обновление каждые 10 секунд
+</script>
+
+<style>
+.team-score-info {
+    margin: 10px 0;
+}
+
+.team-current-score {
+    padding: 10px;
+    border-radius: var(--border-radius);
+    background: #f8f9fa;
+    font-size: 1.1rem;
+}
+
+.team-current-score.positive {
+    background: #d4edda;
+    color: #155724;
+}
+
+.team-current-score.negative {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.team-scores-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 15px;
+}
+
+.team-score-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.team-score-item .team-score.positive {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.team-score-item .team-score.negative {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.error-message {
+    color: #dc3545;
+    background: #f8d7da;
+    padding: 10px;
+    border-radius: var(--border-radius);
+    margin: 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.points-preview {
+    margin: 15px 0;
+}
+
+.points-preview-content {
+    padding: 15px;
+    border-radius: var(--border-radius);
+    text-align: center;
+    font-size: 1.1rem;
+}
+
+.points-preview-content.positive {
+    background: #d4edda;
+    color: #155724;
+}
+
+.points-preview-content.negative {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.quick-team-btn {
+    padding: 10px 15px;
+    background: #e9ecef;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: var(--transition);
+    margin: 5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.quick-team-btn:hover {
+    background: var(--primary);
+    color: white;
+}
+
+.recent-results {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.recent-result {
+    padding: 15px;
+    border-radius: var(--border-radius);
+    margin-bottom: 10px;
+    background: #f8f9fa;
+    border-left: 4px solid #6c757d;
+}
+
+.recent-result-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.positive {
+    color: #28a745;
+}
+
+.negative {
+    color: #dc3545;
+}
+
+.jury-panel {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 30px;
+    align-items: start;
+}
+
+.jury-form-section {
+    grid-column: 1;
+}
+
+.quick-input-section, .recent-results-section {
+    grid-column: 2;
+}
+
+@media (max-width: 768px) {
+    .jury-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .jury-form-section, .quick-input-section, .recent-results-section {
+        grid-column: 1;
+    }
+}
+</style>
+{% endblock %}

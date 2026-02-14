@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Главная - Платформа турниров{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1><i class="fas fa-chess-board"></i> Добро пожаловать на Турнирную Платформу</h1>
+    <p class="subtitle">Платформа для проведения интеллектуальных игр и турниров. Поддержка жюри, организаторов и участников.</p>
+</div>
+
+<div class="games-section">
+    <h2><i class="fas fa-gamepad"></i> Доступные игры</h2>
+    <p class="section-description">Выберите игру для просмотра турниров</p>
+
+    <div class="games-grid">
+        {% for game in games %}
+        <div class="game-card">
+            <div class="game-icon">
+                <i class="fas fa-{{ 'chart-line' if 'бирж' in game.name else 'brain' if 'логич' in game.name else 'rocket' }}"></i>
+            </div>
+            <h3>{{ game.name }}</h3>
+            <p>{{ game.description }}</p>
+            <div class="game-actions">
+                <a href="{{ url_for('game_page', game_id=game.id) }}" class="btn btn-primary">
+                    <i class="fas fa-eye"></i> Смотреть турниры
+                </a>
+                <!-- Изменено: теперь инструкция только для Мат биржи -->
+                {% if game.id == 1 %}
+                <a href="{{ url_for('view_instruction', game_id=game.id) }}" class="btn btn-secondary">
+                    <i class="fas fa-book-open"></i> Инструкция
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="platform-info">
+    <h2><i class="fas fa-info-circle"></i> О платформе</h2>
+    <div class="info-grid">
+        <div class="info-card">
+            <i class="fas fa-users"></i>
+            <h3>Для участников</h3>
+            <p>Просмотр результатов, табло и хода турниров в реальном времени</p>
+        </div>
+        <div class="info-card">
+            <i class="fas fa-gavel"></i>
+            <h3>Для жюри</h3>
+            <p>Удобный ввод результатов по паролю, автоматический подсчет баллов</p>
+        </div>
+        <div class="info-card">
+            <i class="fas fa-calendar-alt"></i>
+            <h3>Для организаторов</h3>
+            <p>Создание турниров с паролями, управление командами и расписанием</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

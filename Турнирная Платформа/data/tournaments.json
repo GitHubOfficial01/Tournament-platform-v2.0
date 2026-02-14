@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "game_id": 1,
+    "name": "Мат биржа - Москва 2024",
+    "location": "Москва, МГУ",
+    "status": "active",
+    "start_date": "2024-10-01",
+    "end_date": "2024-10-03",
+    "password": "matbaza2024",
+    "created_by": 1,
+    "created_at": "2026-02-14T22:33:33.570965"
+  },
+  {
+    "id": 2,
+    "game_id": 1,
+    "name": "Мат биржа - Санкт-Петербург 2024",
+    "location": "СПб, Политех",
+    "status": "finished",
+    "start_date": "2024-09-15",
+    "end_date": "2024-09-17",
+    "password": "spb2024",
+    "created_by": 1,
+    "created_at": "2026-02-14T22:33:33.570965"
+  }
+]

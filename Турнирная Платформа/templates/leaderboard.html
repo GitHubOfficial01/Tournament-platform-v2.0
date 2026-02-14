@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Табло - {{ tournament.name }}{% endblock %}
+
+{% block content %}
+<div class="tournament-header">
+    <h1><i class="fas fa-trophy"></i> {{ tournament.name }}</h1>
+    <p class="tournament-location"><i class="fas fa-map-marker-alt"></i> {{ tournament.location }}</p>
+    <p class="tournament-dates"><i class="fas fa-calendar-alt"></i> {{ tournament.start_date }} - {{ tournament.end_date }}</p>
+</div>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="openTab('protocols')">
+        <i class="fas fa-list"></i> Все протоколы
+    </button>
+    <button class="tab-btn" onclick="openTab('summary')">
+        <i class="fas fa-table"></i> Сводная таблица
+    </button>
+    <button class="tab-btn" onclick="openTab('leaderboard')">
+        <i class="fas fa-chart-line"></i> Табло результатов
+    </button>
+</div>
+
+<div id="protocols" class="tab-content active">
+    <div class="tab-header">
+        <h3><i class="fas fa-list-alt"></i> Ход игры - все протоколы</h3>
+        <div class="filter-section">
+            <label for="teamFilter"><i class="fas fa-filter"></i> Фильтр по команде:</label>
+            <select id="teamFilter" onchange="filterProtocols()">
+                <option value="">Все команды</option>
+                {% for team in teams %}
+                <option value="{{ team }}">{{ team }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="protocols-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Время</th>
+                    <th>Команда</th>
+                    <th>Задача №</th>
+                    <th>Ставка</th>
+                    <th>Результат</th>
+                    <th>Баллы</th>
+                </tr>
+            </thead>
+            <tbody id="protocolsBody">
+                {% for sub in submissions %}
+                <tr class="protocol-row" data-team="{{ sub.team_name }}">
+                    <td>{{ sub.submitted_at[:16] }}</td>
+                    <td>{{ sub.team_name }}</td>
+                    <td>Задача {{ sub.task_number }}</td>
+                    <td>{{ sub.bet }}</td>
+                    <td>
+                        {% if sub.is_correct %}
+                        <span class="correct"><i class="fas fa-check"></i> Правильно</span>
+                        {% else %}
+                        <span class="incorrect"><i class="fas fa-times"></i> Неправильно</span>
+                        {% endif %}
+                    </td>
+                    <td><strong>{{ sub.points }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="summary" class="tab-content">
+    <h3><i class="fas fa-table"></i> Сводная таблица по командам</h3>
+
+    <div class="summary-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Команда</th>
+                    {% for i in range(1, 6) %}
+                    <th>Задача {{ i }}</th>
+                    {% endfor %}
+                    <th>Итого</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for team, score in team_scores.items() %}
+                <tr>
+                    <td><strong>{{ team }}</strong></td>
+                    {% for i in range(1, 6) %}
+                    <td>
+                        {% set task_subs = submissions|selectattr('team_name', 'equalto', team)|selectattr('task_number', 'equalto', i)|list %}
+                        {% if task_subs %}
+                            {% set task_total = task_subs|sum(attribute='points') %}
+                            {{ task_total if task_total > 0 else '-' }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td><strong>{{ score }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="leaderboard" class="tab-content">
+    <h3><i class="fas fa-chart-line"></i> Текущее табло результатов</h3>
+
+    <div class="leaderboard">
+        {% for team, score in team_scores.items() %}
+        <div class="leaderboard-item">
+            <div class="leaderboard-rank">{{ loop.index }}</div>
+            <div class="leaderboard-team">
+                <div class="team-name">{{ team }}</div>
+                <div class="team-score">{{ score }} баллов</div>
+            </div>
+            <div class="leaderboard-progress">
+                <div class="progress-bar" style="width: {{ (score / (team_scores.values()|max or 1)) * 100 }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="back-link">
+    <a href="{{ url_for('game_page', game_id=tournament.game_id) }}" class="btn btn-outline">
+        <i class="fas fa-arrow-left"></i> Вернуться к турнирам
+    </a>
+</div>
+
+<script>
+function openTab(tabName) {
+    // Скрыть все вкладки
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+
+    // Убрать активный класс у всех кнопок
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // Показать выбранную вкладку
+    document.getElementById(tabName).classList.add('active');
+
+    // Активировать соответствующую кнопку
+    event.currentTarget.classList.add('active');
+}
+
+function filterProtocols() {
+    const filterValue = document.getElementById('teamFilter').value.toLowerCase();
+    const rows = document.querySelectorAll('.protocol-row');
+
+    rows.forEach(row => {
+        const teamName = row.getAttribute('data-team').toLowerCase();
+        if (!filterValue || teamName.includes(filterValue)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+</script>
+{% endblock %}

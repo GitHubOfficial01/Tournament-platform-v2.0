@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Панель жюри{% endblock %}
+
+{% block content %}
+<div class="jury-header">
+    <h1><i class="fas fa-gavel"></i> Панель жюри/организатора</h1>
+    <p class="welcome-message">Добро пожаловать, {{ current_user.username }}! Вы вошли как {{ current_user.role }}.</p>
+</div>
+
+<div class="jury-sections">
+    <div class="jury-section">
+        <h2><i class="fas fa-plus-circle"></i> Ввод результатов</h2>
+
+        <div class="form-container">
+            <form id="resultForm">
+                <div class="form-group">
+                    <label for="tournamentSelect"><i class="fas fa-trophy"></i> Турнир:</label>
+                    <select id="tournamentSelect" required>
+                        <option value="">Выберите турнир</option>
+                        {% for tournament in tournaments %}
+                        <option value="{{ tournament.id }}">{{ tournament.name }} ({{ tournament.location }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="teamName"><i class="fas fa-users"></i> Команда:</label>
+                    <input type="text" id="teamName" placeholder="Введите название команды" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="taskNumber"><i class="fas fa-tasks"></i> Номер задачи:</label>
+                    <input type="number" id="taskNumber" min="1" max="20" value="1" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="betAmount"><i class="fas fa-coins"></i> Ставка команды:</label>
+                    <input type="number" id="betAmount" min="1" placeholder="Введите ставку" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Вердикт жюри:</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="verdict" value="correct" required>
+                            <span class="radio-custom correct-radio"></span>
+                            <span>Правильно</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="verdict" value="incorrect" required>
+                            <span class="radio-custom incorrect-radio"></span>
+                            <span>Неправильно</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">
+                    <i class="fas fa-paper-plane"></i> Отправить результат
+                </button>
+            </form>
+        </div>
+
+        <div id="resultMessage" class="message"></div>
+    </div>
+
+    <div class="jury-section">
+        <h2><i class="fas fa-list"></i> Активные турниры</h2>
+
+        <div class="active-tournaments">
+            {% for tournament in tournaments if tournament.status == 'active' %}
+            <div class="tournament-card">
+                <h3>{{ tournament.name }}</h3>
+                <p><i class="fas fa-map-marker-alt"></i> {{ tournament.location }}</p>
+                <p><i class="fas fa-calendar-alt"></i> {{ tournament.start_date }} - {{ tournament.end_date }}</p>
+                <a href="{{ url_for('tournament_leaderboard', tournament_id=tournament.id) }}"
+                   class="btn btn-sm btn-outline">
+                    <i class="fas fa-external-link-alt"></i> Перейти к табло
+                </a>
+            </div>
+            {% else %}
+            <p class="no-data">Нет активных турниров</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('resultForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = {
+        tournament_id: parseInt(document.getElementById('tournamentSelect').value),
+        team_name: document.getElementById('teamName').value,
+        task_number: parseInt(document.getElementById('taskNumber').value),
+        bet: parseInt(document.getElementById('betAmount').value),
+        is_correct: document.querySelector('input[name="verdict"]:checked').value === 'correct'
+    };
+
+    const messageDiv = document.getElementById('resultMessage');
+
+    try {
+        const response = await fetch('/api/submit_result', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            messageDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i> Результат успешно сохранен!<br>
+                    Команда: ${result.submission.team_name}<br>
+                    Задача: ${result.submission.task_number}<br>
+                    Баллы: ${result.submission.points}
+                </div>
+            `;
+
+            // Очистка формы
+            document.getElementById('resultForm').reset();
+            document.getElementById('taskNumber').value = 1;
+        } else {
+            messageDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i> Ошибка: ${result.error}
+                </div>
+            `;
+        }
+    } catch (error) {
+        messageDiv.innerHTML = `
+            <div class="alert alert-error">
+                <i class="fas fa-exclamation-circle"></i> Ошибка соединения с сервером
+            </div>
+        `;
+    }
+
+    // Автоскрытие сообщения через 5 секунд
+    setTimeout(() => {
+        messageDiv.innerHTML = '';
+    }, 5000);
+});
+</script>
+{% endblock %}

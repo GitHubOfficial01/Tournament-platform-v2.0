@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "username": "organizer1",
+    "email": "org1@example.com",
+    "role": "organizer",
+    "password_hash": "pbkdf2:sha256:600000$G113PN16IBRG4f7R$5a059bf3bf9145e7386cef08736520c888586e6a625d8eff7cdda4cf334c7a3a",
+    "created_at": "2026-02-14T22:33:33.121508"
+  },
+  {
+    "id": 2,
+    "username": "jury1",
+    "email": "jury1@example.com",
+    "role": "jury",
+    "password_hash": "pbkdf2:sha256:600000$grsYNj2Kw80kCCum$cdfc26b8dc6abd4ad07e1fa410214698abe144d7069d72ec1688788671858554",
+    "created_at": "2026-02-14T22:33:33.570965"
+  }
+]

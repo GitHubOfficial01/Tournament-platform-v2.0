@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Панель организатора{% endblock %}
+
+{% block content %}
+<div class="organizer-header">
+    <h1><i class="fas fa-cog"></i> Панель организатора</h1>
+    <p class="welcome-message">Добро пожаловать, {{ current_user.username }}!</p>
+    <p class="info-message">Вы видите только свои турниры</p>
+</div>
+
+<div class="organizer-sections">
+    <!-- Создание турнира -->
+    <div class="organizer-section">
+        <h2><i class="fas fa-plus-circle"></i> Создать новый турнир</h2>
+
+        <div class="form-container">
+            <form method="POST" action="{{ url_for('create_tournament') }}">
+                <div class="form-group">
+                    <label for="name"><i class="fas fa-trophy"></i> Название турнира:</label>
+                    <input type="text" id="name" name="name" required
+                           placeholder="Например: Мат биржа - Москва 2024">
+                </div>
+
+                <div class="form-group">
+                    <label for="game_id"><i class="fas fa-gamepad"></i> Игра:</label>
+                    <select id="game_id" name="game_id" required>
+                        <option value="">Выберите игру</option>
+                        {% for game in games %}
+                        <option value="{{ game.id }}">{{ game.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="location"><i class="fas fa-map-marker-alt"></i> Место проведения:</label>
+                    <input type="text" id="location" name="location" required
+                           placeholder="Город, организация">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="start_date"><i class="fas fa-calendar-alt"></i> Дата начала:</label>
+                        <input type="date" id="start_date" name="start_date" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="end_date"><i class="fas fa-calendar-alt"></i> Дата окончания:</label>
+                        <input type="date" id="end_date" name="end_date" required>
+                    </div>
+                </div>
+
+                <div class="form-group password-field">
+                    <label for="password"><i class="fas fa-lock"></i> Пароль для жюри:</label>
+                    <input type="text" id="password" name="password" required
+                           placeholder="Придумайте пароль"
+                           value="{{ range(100000, 999999) | random }}">
+                    <small class="form-text">Этот пароль нужно сообщить жюри</small>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">
+                    <i class="fas fa-check-circle"></i> Создать турнир
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Мои турниры -->
+    <div class="organizer-section">
+        <h2><i class="fas fa-list"></i> Мои турниры</h2>
+
+        <div class="tournaments-management">
+            {% if tournaments %}
+                {% for tournament in tournaments %}
+                <div class="tournament-management-card">
+                    <div class="tournament-info">
+                        <h3>{{ tournament.name }}</h3>
+                        <p><i class="fas fa-map-marker-alt"></i> {{ tournament.location }}</p>
+                        <p><i class="fas fa-calendar-alt"></i> {{ tournament.start_date }} - {{ tournament.end_date }}</p>
+                        <p><i class="fas fa-lock"></i> Пароль жюри: <code>{{ tournament.password }}</code></p>
+                        <p><i class="fas fa-chart-line"></i> Всего результатов:
+                            {% set ns = namespace(count=0) %}
+                            {% for sub in data_manager.load_submissions() if sub.tournament_id == tournament.id %}
+                                {% set ns.count = ns.count + 1 %}
+                            {% endfor %}
+                            {{ ns.count }}
+                        </p>
+                    </div>
+                    <div class="tournament-actions">
+                        <span class="status-badge status-{{ tournament.status }}">
+                            {% if tournament.status == 'active' %}Активный
+                            {% elif tournament.status == 'finished' %}Завершен
+                            {% else %}Предстоящий{% endif %}
+                        </span>
+                        <a href="{{ url_for('tournament_leaderboard', tournament_id=tournament.id) }}"
+                           class="btn btn-sm btn-primary">
+                            <i class="fas fa-chart-line"></i> Табло
+                        </a>
+                        <form method="POST" action="{{ url_for('delete_tournament', tournament_id=tournament.id) }}"
+                              style="display: inline;"
+                              onsubmit="return confirm('Удалить турнир? Все результаты будут потеряны!');">
+                            <button type="submit" class="btn btn-sm btn-danger">
+                                <i class="fas fa-trash"></i> Удалить
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="no-data">У вас пока нет созданных турниров</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Установка минимальной даты (сегодня)
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('start_date').min = today;
+    document.getElementById('end_date').min = today;
+});
+</script>
+
+<style>
+.organizer-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.organizer-header h1 {
+    color: var(--primary);
+    margin-bottom: 10px;
+}
+
+.info-message {
+    color: var(--gray);
+    font-style: italic;
+}
+
+.organizer-sections {
+    display: grid;
+    gap: 30px;
+}
+
+.organizer-section {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 30px;
+    box-shadow: var(--box-shadow);
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.password-field {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: var(--border-radius);
+    border: 2px dashed var(--primary);
+}
+
+.password-field input {
+    font-family: monospace;
+    font-size: 1.2rem;
+    letter-spacing: 2px;
+}
+
+.form-text {
+    display: block;
+    margin-top: 5px;
+    color: var(--gray);
+    font-size: 0.9rem;
+}
+
+.tournaments-management {
+    display: grid;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.tournament-management-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: var(--border-radius);
+    border-left: 4px solid var(--primary);
+}
+
+.tournament-info h3 {
+    margin-bottom: 10px;
+    color: var(--primary);
+}
+
+.tournament-info p {
+    margin-bottom: 5px;
+    color: var(--gray);
+}
+
+.tournament-info code {
+    background: var(--dark);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.tournament-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+
+    .tournament-management-card {
+        flex-direction: column;
+        gap: 15px;
+        align-items: flex-start;
+    }
+
+    .tournament-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+</style>
+{% endblock %}
